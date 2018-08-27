@@ -49,9 +49,11 @@
   </form>
 
   <div id="stats">
-    <!--<h1><p class="label label-primary" id="point-wb">Location: </p></h1>
-    <h1><p class="label label-primary" id="neighborhood-wb">Neighborhood: </p></h1>-->
-    <h1><p class="label label-primary" id="city-wb">City Score: </p></h1>
+<!--
+    <h1><p class="label label-primary" id="point-wb">Location: </p></h1>
+    <h1><p class="label label-primary" id="neighborhood-wb">Neighborhood: </p></h1>
+-->
+    <h1><p class="label label-primary" id="city-wb">DC City Score: </p></h1>
   </div>
 
 </body>
@@ -93,7 +95,7 @@
         }).then(function(stats){
             console.log(stats.avg)
                 mean_city = stats.avg;
-                document.getElementById('city-wb').textContent =  "City: " + mean_city;
+                document.getElementById('city-wb').textContent =  "DC City Score: " + mean_city;
               }, function(error){
             console.error(error);
         });
@@ -109,15 +111,6 @@
               fieldName: "grid_code",
               visible: true,
               label: "At this location: "
-            },
-              {
-              fieldName: "mean_score()",
-              visible: true,
-              label: "The city",
-              format: {
-                places: 0,
-                digitSeparator: true
-              }
             }]
           }], 
         };
