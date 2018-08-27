@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>Walkability Raster Test Page</title>
+
+  <!-- Esri JS API + CSS-->
+  <link rel="stylesheet" href="https://js.arcgis.com/4.8/esri/css/main.css">
+  <script src="https://js.arcgis.com/4.8/"></script>
+
+  <!-- Google Maps Geocoder-->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC8khbel0mGr5cBgkMVvXKJOWEpI_uVmeU"> </script>
+
+  <!-- Bootstrap -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+
+  <style>
+    html,
+    body,
+    #viewDiv {
+      padding: 0;
+      margin: 0;
+      height: 90%;
+      width: 100%;
+    }
+    #form {
+      float: left;
+      width: 50%;
+      margin-left: 1%;
+    }
+    #stats {
+      float: right;
+      width: 35%;
+      margin-top: -1.5%;
+    }
+ </style>
+</head>
+
+<body>
+  <div id="viewDiv"></div>
+  <br/>
+  <form id="form">
+      <div class="form-group">
+        <label for="address">Address</label>
+        <input type="text" class="form-control" id="address" placeholder="1600 Pennsylvania Ave NW">
+      </div>
+      <button type="button" id="submit" class="btn btn-primary">Submit</button>
+  </form>
+
+  <div id="stats">
+    <!--<h1><p class="label label-primary" id="point-wb">Location: </p></h1>
+    <h1><p class="label label-primary" id="neighborhood-wb">Neighborhood: </p></h1>-->
+    <h1><p class="label label-primary" id="city-wb">City Score: </p></h1>
+  </div>
+
+</body>
+
+
+<script>
+    var mean_city;
+    require([
+        "esri/Map",
+        "esri/views/SceneView",
+        "esri/geometry/Geometry",
+        "esri/symbols/SimpleMarkerSymbol",
+        "esri/Graphic",
+        "esri/geometry/Point", 
+        "esri/layers/TileLayer",
+        "esri/layers/FeatureLayer",
+        "esri/renderers/smartMapping/statistics/summaryStatistics",
+        "esri/PopupTemplate",
+        "dojo/dom",
+        "dojo/on",
+        "dojo/domReady!"
+      ],
+      function(
+        Map, SceneView, Geometry, SimpleMarkerSymbol, Graphic, Point, TileLayer, FeatureLayer, summaryStatistics, PopupTemplate, dom, on
+      ) {
+        /*raster layer showing walkability of DC*/
+
+
+        var scoreLayer = new FeatureLayer({
+          url: "https://services.arcgis.com/bkrWlSKcjUDFDtgw/arcgis/rest/services/DC_WalkRasterPoints/FeatureServer/0",
+          id: "score-layer",
+          opacity: 0.0,
+        outFields: ["*"]
+        });
+
+        summaryStatistics({
+            layer: scoreLayer,
+            field: "grid_code"
+        }).then(function(stats){
+            console.log(stats.avg)
+                mean_city = stats.avg;
+                document.getElementById('city-wb').textContent =  "City: " + mean_city;
+              }, function(error){
+            console.error(error);
+        });
+                
+        
+
+        scoreLayer.popupTemplate = { // autocasts as new PopupTemplate()
+          title: "<font color='#008000'>Walkability Score:",
+          content: [{
+            // popup with score
+            type: "fields",
+            fieldInfos: [{
+              fieldName: "grid_code",
+              visible: true,
+              label: "At this location: "
+            },
+              {
+              fieldName: "mean_score()",
+              visible: true,
+              label: "The city",
+              format: {
+                places: 0,
+                digitSeparator: true
+              }
+            }]
+          }], 
+        };
+
+        var walkableLayer = new TileLayer({
+          url: "https://tiles.arcgis.com/tiles/bkrWlSKcjUDFDtgw/arcgis/rest/services/DC_WalkRaster/MapServer",
+          id: "walk-layer",
+          opacity: 0.9
+        });
+        var nbrhdLayer = new FeatureLayer({
+          url: "https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/Administrative_Other_Boundaries_WebMercator/MapServer/17",
+          id: "nbrhd-layer",
+          opacity: 0.9
+        });
+        /*init the map and load layers*/
+        var map = new Map({
+          basemap: "oceans",
+          layers: [walkableLayer, scoreLayer, nbrhdLayer],
+          center: [38.9072, 77.0369]
+        });
+
+        /*init view and set the view to go to the raster's extent when loaded*/
+        var view = new SceneView({
+          container: "viewDiv",
+          map: map,
+          popup: {
+          dockEnabled: true,
+          dockOptions: {
+            buttonEnabled: false,
+            breakpoint: false
+          }
+        }
+        });
+
+        view.when(function() {
+          walkableLayer.when(function() {
+            view.goTo(walkableLayer.fullExtent);
+          });
+        });
+
+      /*listener for when the button is clicked - execute geocoding*/
+      document.getElementById('submit').addEventListener('click', function() {
+        geocodeAddress(map);
+      });
+
+      /*geocode the input address and plot a point on the map*/
+      function geocodeAddress(resultsMap) {
+        var geocoder = new google.maps.Geocoder();
+        var address = document.getElementById('address').value;
+
+        geocoder.geocode({address: address}, function(results, status) {
+          if (status == google.maps.GeocoderStatus.OK) {
+            var lat = results[0].geometry.location.lat();
+            var long = results[0].geometry.location.lng();
+            console.log(lat + " " + long);
+
+            //create the point and add it to the view
+            var point = new Point(long, lat);
+            var symbol = new SimpleMarkerSymbol();
+            var graphic = new Graphic(point, symbol);
+            view.graphics.add(graphic);
+            view.goTo({
+              target: graphic,
+              zoom: 15
+            });
+          } 
+          else {
+            console.log("Geocoding error " + status);
+          }
+        });
+      }
+
+    });
+  </script>
+</html>
