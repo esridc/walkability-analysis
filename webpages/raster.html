@@ -9,9 +9,6 @@
   <link rel="stylesheet" href="https://js.arcgis.com/4.8/esri/css/main.css">
   <script src="https://js.arcgis.com/4.8/"></script>
 
-  <!-- Google Maps Geocoder-->
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC8khbel0mGr5cBgkMVvXKJOWEpI_uVmeU"> </script>
-
   <!-- Bootstrap -->
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
 
@@ -67,17 +64,18 @@
         "esri/geometry/Geometry",
         "esri/symbols/SimpleMarkerSymbol",
         "esri/Graphic",
-        "esri/geometry/Point", 
+        "esri/geometry/Point",
         "esri/layers/TileLayer",
         "esri/layers/FeatureLayer",
         "esri/renderers/smartMapping/statistics/summaryStatistics",
         "esri/PopupTemplate",
+        "esri/tasks/Locator",
         "dojo/dom",
         "dojo/on",
         "dojo/domReady!"
       ],
       function(
-        Map, SceneView, Geometry, SimpleMarkerSymbol, Graphic, Point, TileLayer, FeatureLayer, summaryStatistics, PopupTemplate, dom, on
+        Map, SceneView, Geometry, SimpleMarkerSymbol, Graphic, Point, TileLayer, FeatureLayer, summaryStatistics, PopupTemplate, Locator, dom, on
       ) {
         /*raster layer showing walkability of DC*/
 
@@ -99,8 +97,8 @@
               }, function(error){
             console.error(error);
         });
-                
-        
+
+
 
         scoreLayer.popupTemplate = { // autocasts as new PopupTemplate()
           title: "<font color='#008000'>Walkability Score:",
@@ -112,7 +110,7 @@
               visible: true,
               label: "At this location: "
             }]
-          }], 
+          }],
         };
 
         var walkableLayer = new TileLayer({
@@ -158,17 +156,17 @@
 
       /*geocode the input address and plot a point on the map*/
       function geocodeAddress(resultsMap) {
-        var geocoder = new google.maps.Geocoder();
+        // var geocoder = new google.maps.Geocoder();
+        var geocoder = new Locator({
+          url: "http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer"
+        });
         var address = document.getElementById('address').value;
-
-        geocoder.geocode({address: address}, function(results, status) {
-          if (status == google.maps.GeocoderStatus.OK) {
-            var lat = results[0].geometry.location.lat();
-            var long = results[0].geometry.location.lng();
-            console.log(lat + " " + long);
+        geocoder.addressToLocations({address: {"singleLine": address}}).then(function(results) {
+          var location = results[0].location;
+          console.log("Location: ", [location.longitude, location.latitude]);
 
             //create the point and add it to the view
-            var point = new Point(long, lat);
+            var point = new Point(location.longitude, location.latitude);
             var symbol = new SimpleMarkerSymbol();
             var graphic = new Graphic(point, symbol);
             view.graphics.add(graphic);
@@ -176,11 +174,9 @@
               target: graphic,
               zoom: 15
             });
-          } 
-          else {
-            console.log("Geocoding error " + status);
-          }
-        });
+          }).catch(function(error) {
+            console.log("Geocoding error: ", error);
+          });
       }
 
     });
