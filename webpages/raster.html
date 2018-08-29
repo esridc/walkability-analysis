@@ -21,36 +21,29 @@
       height: 90%;
       width: 100%;
     }
-    #form {
-      float: left;
-      width: 50%;
-      margin-left: 1%;
-    }
-    #stats {
-      float: right;
-      width: 35%;
-      margin-top: -1.5%;
-    }
  </style>
 </head>
 
 <body>
   <div id="viewDiv"></div>
-  <br/>
+  <div class="col-lg-4">
   <form id="form">
-      <div class="form-group">
-        <label for="address">Address</label>
-        <input type="text" class="form-control" id="address" placeholder="1600 Pennsylvania Ave NW">
+    <label for="address">Address</label>
+      <div class="input-group">
+        <input type="text" class="form-control" id="address" length=80 placeholder="1600 Pennsylvania Ave NW">
+        <span class="input-group-btn">
+          <button type="button" id="submit" class="btn btn-primary">Calculate</button>
+        </span>
       </div>
-      <button type="button" id="submit" class="btn btn-primary">Submit</button>
-  </form>
 
-  <div id="stats">
-<!--
+  </form>
+  </div>
+  <div id="stats" class="col-lg-6">
+
     <h1><p class="label label-primary" id="point-wb">Location: </p></h1>
-    <h1><p class="label label-primary" id="neighborhood-wb">Neighborhood: </p></h1>
--->
-    <h1><p class="label label-primary" id="city-wb">DC City Score: </p></h1>
+    <!-- <h1><p class="label label-primary" id="neighborhood-wb">Neighborhood: </p></h1> -->
+
+    <h1><p class="label label-default" id="city-wb">DC City Score: </p></h1>
   </div>
 
 </body>
@@ -89,10 +82,10 @@
 
         summaryStatistics({
             layer: scoreLayer,
-            field: "grid_code"
+            field: "percentile"
         }).then(function(stats){
             console.log(stats.avg)
-                mean_city = stats.avg;
+                mean_city = (stats.avg * 100).toFixed(0);
                 document.getElementById('city-wb').textContent =  "DC City Score: " + mean_city;
               }, function(error){
             console.error(error);
@@ -100,18 +93,18 @@
 
 
 
-        scoreLayer.popupTemplate = { // autocasts as new PopupTemplate()
-          title: "<font color='#008000'>Walkability Score:",
-          content: [{
-            // popup with score
-            type: "fields",
-            fieldInfos: [{
-              fieldName: "grid_code",
-              visible: true,
-              label: "At this location: "
-            }]
-          }],
-        };
+        // scoreLayer.popupTemplate = { // autocasts as new PopupTemplate()
+        //   title: "<font color='#008000'>Walkability Score:",
+        //   content: [{
+        //     // popup with score
+        //     type: "fields",
+        //     fieldInfos: [{
+        //       fieldName: "percentile",
+        //       visible: true,
+        //       label: "At this location: "
+        //     }]
+        //   }],
+        // };
 
         var walkableLayer = new TileLayer({
           url: "https://tiles.arcgis.com/tiles/bkrWlSKcjUDFDtgw/arcgis/rest/services/DC_WalkRaster/MapServer",
@@ -126,7 +119,7 @@
         /*init the map and load layers*/
         var map = new Map({
           basemap: "oceans",
-          layers: [walkableLayer, scoreLayer, nbrhdLayer],
+          layers: [walkableLayer, nbrhdLayer],
           center: [38.9072, 77.0369]
         });
 
@@ -151,20 +144,12 @@
 
       /*listener for when the button is clicked - execute geocoding*/
       document.getElementById('submit').addEventListener('click', function() {
-        geocodeAddress(map);
-      });
-
-      /*geocode the input address and plot a point on the map*/
-      function geocodeAddress(resultsMap) {
-        // var geocoder = new google.maps.Geocoder();
-        var geocoder = new Locator({
-          url: "http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer"
-        });
         var address = document.getElementById('address').value;
-        geocoder.addressToLocations({address: {"singleLine": address}}).then(function(results) {
-          var location = results[0].location;
-          console.log("Location: ", [location.longitude, location.latitude]);
+        // Only find locations where we have a walkScore
+        var extent = walkableLayer.fullExtent;
 
+        geocodeAddress(address, extent).then(function(results) {
+          var location = results[0].location;
             //create the point and add it to the view
             var point = new Point(location.longitude, location.latitude);
             var symbol = new SimpleMarkerSymbol();
@@ -174,9 +159,52 @@
               target: graphic,
               zoom: 15
             });
+            calculateScore(location).then(function(walkScore) {
+              var displayScore = (walkScore * 100).toFixed(0);
+              document.getElementById('point-wb').textContent =  address + ": " + displayScore;
+            }).catch(function(error){
+              console.error("calculateScore error", error)
+            })
+
           }).catch(function(error) {
             console.log("Geocoding error: ", error);
           });
+      });
+
+      function calculateScore(location) {
+        var query = scoreLayer.createQuery();
+        query.geometry = location;  // the point location of the pointer
+        // var percentAverage = {
+        //   onStatisticField: "percentile",  // service field for 2015 population
+        //   outStatisticFieldName: "percentileAverage",
+        //   statisticType: "avg"
+        // };
+        // query.outStatistics = [ percentAverage ];
+        query.distance = 100;
+        query.units = "meters";
+        return scoreLayer.queryFeatures(query).then(function(response){
+           var percentileAverage = 0;
+           response.features.forEach(function(feature) {
+             percentileAverage += feature.attributes.percentile;
+           })
+           percentileAverage /= response.features.length;
+
+           var func = new Promise(function(resolve, error) {
+             resolve(percentileAverage)
+           })
+           return func;
+         }).catch(function(error) {
+           console.error("calculateScore error", error)
+         })
+      }
+
+      /*geocode the input address and plot a point on the map*/
+      function geocodeAddress(address, extent) {
+        // var geocoder = new google.maps.Geocoder();
+        var geocoder = new Locator({
+          url: "http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer"
+        });
+        return geocoder.addressToLocations({address: {"singleLine": address}, searchExtent: extent});
       }
 
     });
