@@ -18,34 +18,67 @@
     #viewDiv {
       padding: 0;
       margin: 0;
-      height: 90%;
+      min-height: 800px;
       width: 100%;
+    }
+    #app-title {
+      border-bottom: 1px solid #aaa;
+    }
+    #app-sidebar {
+      padding-top: 20px;
     }
  </style>
 </head>
 
 <body>
-  <div id="viewDiv"></div>
-  <div class="col-lg-4">
-  <form id="form">
-    <label for="address">Address</label>
-      <div class="input-group">
-        <input type="text" class="form-control" id="address" length=80 placeholder="1600 Pennsylvania Ave NW">
-        <span class="input-group-btn">
-          <button type="button" id="submit" class="btn btn-primary">Calculate</button>
-        </span>
+  <div class="container-fluid">
+    <div class="row" id="app-title">
+      <div id="stats" class="col-lg-12">
+        <h1>Walkability Explorer</h1>
       </div>
+    </div>
+    <div class="row">
+      <div id="app-sidebar" class="col-lg-2">
+      <form id="form">
+        <p>
+          Walkable communities improve health, safety, and economy. Explore the walkability of your neighborhood.
+        </p>
+        <h3>Search</h3>
+        <label for="address">Address</label>
+          <div class="input-group">
+            <input type="text" class="form-control" id="address" length=80 placeholder="1600 Pennsylvania Ave NW">
+            <span class="input-group-btn">
+              <button type="button" id="submit" class="btn btn-primary">Calculate</button>
+            </span>
+          </div>
 
-  </form>
+          <h3>Walkability</h3>
+
+          <div class="panel panel-default">
+            <div class="panel-heading" id="address-title"></div>
+            <div class="panel-body" id="address-score"> </div>
+          </div>
+          <div class="panel panel-default">
+            <div class="panel-heading" id="nbhd-title"></div>
+            <div class="panel-body" id="nbhd-score"> </div>
+          </div>
+          <div class="panel panel-default">
+            <div class="panel-heading" id="city-title"></div>
+            <div class="panel-body" id="city-score"> </div>
+          </div>
+
+
+          <!-- <h4><p class="label label-primary" id="point-wb">Location: </p></h4> -->
+          <!-- <h4><p class="label label-primary" id="nbhd-wb">Neighborhood: </p></h4>
+          <h4><p class="label label-default" id="city-wb">DC City Score: </p></h4> -->
+
+      </form>
+      </div>
+      <div class="col-lg-10">
+        <div id="viewDiv">&nbsp;</div>
+      </div>
+    </div>
   </div>
-  <div id="stats" class="col-lg-6">
-
-    <h1><p class="label label-primary" id="point-wb">Location: </p></h1>
-    <!-- <h1><p class="label label-primary" id="neighborhood-wb">Neighborhood: </p></h1> -->
-
-    <h1><p class="label label-default" id="city-wb">DC City Score: </p></h1>
-  </div>
-
 </body>
 
 
@@ -56,19 +89,29 @@
         "esri/views/SceneView",
         "esri/geometry/Geometry",
         "esri/symbols/SimpleMarkerSymbol",
+        "esri/symbols/SimpleLineSymbol",
+        "esri/symbols/SimpleFillSymbol",
         "esri/Graphic",
+        "esri/Color",
         "esri/geometry/Point",
         "esri/layers/TileLayer",
         "esri/layers/FeatureLayer",
         "esri/renderers/smartMapping/statistics/summaryStatistics",
         "esri/PopupTemplate",
         "esri/tasks/Locator",
+        "esri/tasks/ServiceAreaTask",
+        "esri/tasks/support/ServiceAreaParameters",
+        "esri/tasks/support/FeatureSet",
         "dojo/dom",
         "dojo/on",
         "dojo/domReady!"
       ],
       function(
-        Map, SceneView, Geometry, SimpleMarkerSymbol, Graphic, Point, TileLayer, FeatureLayer, summaryStatistics, PopupTemplate, Locator, dom, on
+        Map, SceneView, Geometry,
+        SimpleMarkerSymbol, SimpleLineSymbol, SimpleFillSymbol,
+        Graphic, Color, Point, TileLayer, FeatureLayer,
+        summaryStatistics, PopupTemplate, Locator,
+        ServiceAreaTask, ServiceAreaParameters, FeatureSet, dom, on
       ) {
         /*raster layer showing walkability of DC*/
 
@@ -84,14 +127,10 @@
             layer: scoreLayer,
             field: "percentile"
         }).then(function(stats){
-            console.log(stats.avg)
-                mean_city = (stats.avg * 100).toFixed(0);
-                document.getElementById('city-wb').textContent =  "DC City Score: " + mean_city;
-              }, function(error){
-            console.error(error);
+            displayScore('city', "Washington, DC", stats.avg);
+        }).catch(function(error){
+          console.error("summaryStatistics error", error);
         });
-
-
 
         // scoreLayer.popupTemplate = { // autocasts as new PopupTemplate()
         //   title: "<font color='#008000'>Walkability Score:",
@@ -109,17 +148,17 @@
         var walkableLayer = new TileLayer({
           url: "https://tiles.arcgis.com/tiles/bkrWlSKcjUDFDtgw/arcgis/rest/services/DC_WalkRaster/MapServer",
           id: "walk-layer",
-          opacity: 0.9
+          opacity: 0.5
         });
-        var nbrhdLayer = new FeatureLayer({
+        var nbhdLayer = new FeatureLayer({
           url: "https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/Administrative_Other_Boundaries_WebMercator/MapServer/17",
-          id: "nbrhd-layer",
+          id: "nbhd-layer",
           opacity: 0.9
         });
         /*init the map and load layers*/
         var map = new Map({
-          basemap: "oceans",
-          layers: [walkableLayer, nbrhdLayer],
+          basemap: "streets",
+          layers: [walkableLayer, nbhdLayer],
           center: [38.9072, 77.0369]
         });
 
@@ -148,6 +187,8 @@
         // Only find locations where we have a walkScore
         var extent = walkableLayer.fullExtent;
 
+        // Encapsulate all map drawing code
+        view.graphics.removeAll();
         geocodeAddress(address, extent).then(function(results) {
           var location = results[0].location;
             //create the point and add it to the view
@@ -159,9 +200,20 @@
               target: graphic,
               zoom: 15
             });
+
+            // JSAPI 4 is missing `travelMode` option. Reported bug to Bjorn.
+            //calculateServiceArea(location);
+            getNeighborhood(location).then(function(neighborhood) {
+              calculateScore(neighborhood.geometry).then(function(walkScore) {
+                displayScore('nbhd', neighborhood.attributes["NBH_NAMES"], walkScore)
+              }).catch(function(error){
+                console.error("calculateScore error", error)
+              })
+
+            });
+
             calculateScore(location).then(function(walkScore) {
-              var displayScore = (walkScore * 100).toFixed(0);
-              document.getElementById('point-wb').textContent =  address + ": " + displayScore;
+              displayScore('address', address, walkScore)
             }).catch(function(error){
               console.error("calculateScore error", error)
             })
@@ -171,17 +223,106 @@
           });
       });
 
-      function calculateScore(location) {
-        var query = scoreLayer.createQuery();
+      function displayScore(el, title, score) {
+        var displayScore = (score * 100).toFixed(0);
+        var quality = walkQuality(displayScore)
+        document.getElementById(el + '-title').textContent =  title;
+        document.getElementById(el + '-score').textContent =  quality + " (" + displayScore + ")";
+
+      }
+      function walkQuality(score) {
+        switch (true) {
+          case (score < 40):
+            return "Low walkability";
+            break;
+          case (score >= 40 && score < 60):
+            return "Average walkability";
+            break;
+          case (score >= 60 && score < 80):
+            return "Good walkability";
+            break;
+          case (score >= 80):
+            return "Great walkability";
+            break;
+        }
+      }
+      function drawServiceArea(polygons) {
+        var polygonSymbol = new SimpleFillSymbol(
+            "solid",
+            new SimpleLineSymbol("solid", new Color([232,104,80]), 2),
+            new Color([232,104,80,0.25])
+          );
+          polygons.forEach(function(serviceArea){
+            console.log("Drawing Service Polygon")
+            serviceArea.symbol = polygonSymbol;
+            view.graphics.add(serviceArea);
+          });
+      }
+
+      function getNeighborhood(location) {
+        var query = nbhdLayer.createQuery();
         query.geometry = location;  // the point location of the pointer
+        query.geometryType = "esriGeometryPoint";
+        query.returnGeometry = true;
+        query.outFields = "*";
         // var percentAverage = {
         //   onStatisticField: "percentile",  // service field for 2015 population
         //   outStatisticFieldName: "percentileAverage",
         //   statisticType: "avg"
         // };
         // query.outStatistics = [ percentAverage ];
-        query.distance = 100;
-        query.units = "meters";
+        return nbhdLayer.queryFeatures(query).then(function(response){
+           var nbhd = response.features[0];
+            console.log("Neighborhood", nbhd.attributes["NBH_NAMES"]);
+           var func = new Promise(function(resolve, error) {
+             resolve(nbhd);
+           })
+           return func;
+         }).catch(function(error) {
+           console.error("calculateScore error", error)
+         })
+      }
+      function calculateServiceArea(location) {
+        console.log("calculateServiceArea location", location);
+        params = new ServiceAreaParameters();
+        var features = [];
+        var point = new Point(location.longitude, location.latitude);
+        var symbol = new SimpleMarkerSymbol();
+        var graphic = new Graphic(point, symbol);
+
+        features.push(graphic);
+        var facilities = new FeatureSet();
+        facilities.features = features;
+        params.facilities = facilities;
+        params.defaultBreaks = [2,5,10]
+        params.travelMode = "Walking";
+        var saTask = new ServiceAreaTask("https://sampleserver3.arcgisonline.com/ArcGIS/rest/services/Network/USA/NAServer/Service%20Area");
+
+        console.log("calculateServiceArea params", params);
+
+        saTask.solve(params).then(function(result) {
+          console.log("calculateServiceArea result", result);
+          drawServiceArea(result.serviceAreaPolygons);
+
+        }).catch(function(error) {
+          console.error("calculateServiceArea error", error)
+        })
+      };
+
+      function calculateScore(location) {
+        var query = scoreLayer.createQuery();
+        console.log("calculateScore geometry", location)
+        query.geometry = location;  // the point location of the pointer
+        if(location.type == "point") {
+          query.distance = 100;
+          query.units = "meters";
+        }
+        // var percentAverage = {
+        //   onStatisticField: "percentile",  // service field for 2015 population
+        //   outStatisticFieldName: "percentileAverage",
+        //   statisticType: "avg"
+        // };
+        // query.outStatistics = [ percentAverage ];
         return scoreLayer.queryFeatures(query).then(function(response){
            var percentileAverage = 0;
            response.features.forEach(function(feature) {
